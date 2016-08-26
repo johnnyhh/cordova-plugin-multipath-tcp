@@ -1,7 +1,10 @@
 var exec = require('cordova/exec');
 var multipathTCP = {
-  download: function(hostname, path, callback, errCallback) {
-    exec(callback, errCallback, "MultipathTCP", "download", [hostname, path]);
+  download: function(downloadUrl, callback, errCallback) {
+    exec(callback, errCallback, "MultipathTCP", "download", [downloadUrl]);
+  },
+  onDownloadProgress: function(callback, errCallback) {
+    exec(callback, errCallback, "MultipathTCP", "onDownloadProgress", []);
   }
 };
 
