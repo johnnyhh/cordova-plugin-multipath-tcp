@@ -40,6 +40,7 @@
             filename = [download_url substringWithRange:[url_match rangeAtIndex:2]];
         } else {
             [self sendError:@"Bad download URL format" forId:command.callbackId];
+            return;
         }
         
         struct ifaddrs* addrs = 0;
@@ -49,8 +50,8 @@
         while(addrs) {
             int isUp = (addrs->ifa_flags & IFF_UP);
             int isIPv4 = (addrs->ifa_addr->sa_family == AF_INET);
-            if (isUp == 1 && isIPv4 == 1 && strncmp("pdp_ip", addrs->ifa_name, 6) == 0) {
-            //if (isUp == 1 && isIPv4 == 1 && strncmp("en", addrs->ifa_name, 2) == 0) {
+            //if (isUp == 1 && isIPv4 == 1 && strncmp("pdp_ip", addrs->ifa_name, 6) == 0) {
+            if (isUp == 1 && isIPv4 == 1 && strncmp("en", addrs->ifa_name, 2) == 0) {
                 bind_address = addrs;
                 break;
             }
@@ -58,105 +59,115 @@
         }
         
         if (bind_address == NULL) {
-            [self sendError:@"Could not connect to the internet" forId:command.callbackId];
+            [self sendError:@"No available network interfaces" forId:command.callbackId];
+            return;
         }
         
-        //get the destination address (didn't work)
-        struct addrinfo* server_address;
+        //get the destination address (not working)
+        //struct addrinfo* server_address;
         struct addrinfo hints = {0};
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = IPPROTO_TCP;
-        const char *hostname_as_cstr = [hostname cStringUsingEncoding:NSASCIIStringEncoding];
-        if (getaddrinfo(hostname_as_cstr, "http", &hints, &server_address) != 0) {
-            [self sendError:@"Could not resolve download url" forId:command.callbackId];
+        //const char *hostname_as_cstr = [hostname cStringUsingEncoding:NSASCIIStringEncoding];
+        //int lookup_result = getaddrinfo(hostname_as_cstr, "http", &hints, &server_address);
+        //if (server_address == NULL || lookup_result != 0) {
+        //    [self sendError:@"Could not resolve download url" forId:command.callbackId];
+        //    return;
+        //}
+        
+        //hardcode server address temporarily
+        //(getifaddrs tries to use dead wifi network instead of cell)
+        struct sockaddr_in hardcoded_server_addr = {0};
+        hardcoded_server_addr.sin_family = AF_INET;
+        hardcoded_server_addr.sin_port = htons(80);
+        if (inet_aton("198.199.115.18", &(hardcoded_server_addr.sin_addr)) != 1){
+            [self sendError:@"failed to resolve host IP" forId:command.callbackId];
+            return;
         }
         
         //  create a socket
         int request_socket = socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
         if (bind(request_socket, bind_address->ifa_addr, sizeof(struct sockaddr_in)) < 0) {
             [self connectivityError: command.callbackId];
+            return;
         };
         
         //connect to server
-        if (connect(request_socket, server_address->ai_addr, server_address->ai_addrlen) < 0) {
+        //if (connect(request_socket, server_address->ai_addr, server_address->ai_addrlen) < 0) {
+        if (connect(request_socket, (struct sockaddr *) &hardcoded_server_addr, sizeof(struct sockaddr_in)) < 0) {
             [self connectivityError:command.callbackId];
-        }
-        NSString *request = [NSString stringWithFormat:
-                             @"GET %@ HTTP/1.1\r\nHost: %@\r\nAccept: */*\r\n\r\n"
-                             , filename, hostname];
-        const char *request_as_cstr = [request cStringUsingEncoding:NSASCIIStringEncoding];
-        write(request_socket, request_as_cstr, strlen(request_as_cstr));
-        
-        //parse download header for content length
-        size_t buffer_size=4096;
-        char response_buffer[buffer_size];
-        ssize_t recvd = read(request_socket, response_buffer, buffer_size);
-        ssize_t header_size = 0;
-        NSUInteger content_length = 0;
-        
-        NSString *response = [NSString stringWithCString:response_buffer encoding:NSASCIIStringEncoding];
-        NSString *end_header_str = @"\\b\r\n\r\n\\b";
-        NSRegularExpression *end_header_regex = [NSRegularExpression
-                                                 regularExpressionWithPattern:end_header_str
-                                                 options:0
-                                                 error:&regex_error];
-        NSRange header_range = [end_header_regex rangeOfFirstMatchInString:response
-                                                                   options:0
-                                                                     range:NSMakeRange(0, [response length])];
-        if(!NSEqualRanges(header_range, NSMakeRange(NSNotFound, 0))) {
-            header_size = header_range.location + header_range.length;
-        } else {
-            [self sendError:@"Failed To parse HTTP Headers" forId:command.callbackId];
+            return;
         }
         
-        NSString *content_length_str = @"\\bContent-Length:\\s(\\d+)\\r\\n\\b";
-        NSRegularExpression *content_length_regex = [NSRegularExpression
-                                                     regularExpressionWithPattern:content_length_str
-                                                     options:0 error:&regex_error];
-        NSTextCheckingResult *content_length_match = [content_length_regex firstMatchInString:response
-                                                                                      options:0
-                                                                                        range:NSMakeRange(0, [response length])];
-        if(content_length_match){
-            NSString *cl_str = [response substringWithRange:[content_length_match rangeAtIndex:1]];
-            content_length = [cl_str integerValue];
+        //Create Read+Write stream pair
+        CFReadStreamRef read_stream;
+        CFWriteStreamRef write_stream;
+        CFStreamCreatePairWithSocket(kCFAllocatorDefault, request_socket, &read_stream, &write_stream);
+        
+        //Encode HTTP request
+        CFURLRef req_url = CFURLCreateWithString(kCFAllocatorDefault, (__bridge CFStringRef)download_url, NULL);
+        CFHTTPMessageRef http_request = CFHTTPMessageCreateRequest(kCFAllocatorDefault, CFSTR("GET"), req_url, kCFHTTPVersion1_1);
+        CFHTTPMessageSetHeaderFieldValue(http_request, CFSTR("Host"), (__bridge CFStringRef)hostname);
+        CFHTTPMessageSetHeaderFieldValue(http_request, CFSTR("Accept"), CFSTR("*/*"));
+        
+        //send http request with write stream
+        if(!CFWriteStreamOpen(write_stream)){
+            [self connectivityError:command.callbackId];
+            return;
         }
-        else{
-            [self sendError:@"Failed to Parse HTTP Headers for Content-Length" forId:command.callbackId];
+        
+        CFDataRef request_data = CFHTTPMessageCopySerializedMessage(http_request);
+        CFIndex request_length = CFDataGetLength(request_data);
+        UInt8 *request_buffer = malloc(request_length);
+        CFDataGetBytes(request_data, CFRangeMake(0,request_length), request_buffer);
+        if(CFWriteStreamWrite(write_stream, request_buffer, request_length) < 0 ){
+            [self connectivityError:command.callbackId];
+            return;
         }
+        CFWriteStreamClose(write_stream);
+        CFRelease(write_stream);
+        free(request_buffer);
         
-        char * firmware_buffer = malloc(content_length);
-        
-        size_t tot_recvd = recvd - header_size;
-        memcpy(firmware_buffer, &(response_buffer[header_size]), tot_recvd);
-        NSLog(@"tot_recvd: %zu", tot_recvd);
-        
-        size_t last_notification_size = 0;
-        while((recvd = read(request_socket, response_buffer, buffer_size)) > 0 && tot_recvd < content_length) {
-            memcpy(&firmware_buffer[tot_recvd], response_buffer, recvd);
-            tot_recvd = tot_recvd + recvd;
-            NSLog(@"tot_recvd: %zu", tot_recvd);
-            if(_dl_progress_id != nil && tot_recvd - last_notification_size > 1000000){
-                last_notification_size = tot_recvd;
-                CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDouble:
-                                           ((float)tot_recvd/content_length)];
-                [result setKeepCallbackAsBool:YES];
-                [self.commandDelegate sendPluginResult:result callbackId:_dl_progress_id];
+        //read response, building response object
+        CFIndex buffer_length =4096;
+        UInt8 response_buffer[buffer_length];
+        CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(kCFAllocatorDefault, FALSE);
+        if(!CFReadStreamOpen(read_stream)){
+            [self connectivityError:command.callbackId];
+            return;
+        }
+        CFIndex num_bytes_read = 0;
+        CFIndex content_length = 0;
+        CFIndex total_bytes_read = 0;
+        CFIndex last_notification_size = 0;
+        bool headers_parsed = FALSE;
+        do {
+            num_bytes_read = CFReadStreamRead(read_stream, response_buffer, buffer_length);
+            if(num_bytes_read > 0) {
+                total_bytes_read += num_bytes_read;
+                NSLog(@"Tot recvd: %ld", total_bytes_read);
+                if (!CFHTTPMessageAppendBytes(response, response_buffer, num_bytes_read)){
+                    [self connectivityError:command.callbackId];
+                    return;
+                }
+                if (!headers_parsed && CFHTTPMessageIsHeaderComplete(response)) {
+                    CFStringRef cl_str = CFHTTPMessageCopyHeaderFieldValue(response, CFSTR("Content-Length"));
+                    content_length = CFStringGetIntValue(cl_str);
+                }
+                if (content_length > 0 && total_bytes_read - last_notification_size > 1000000){
+                    last_notification_size = total_bytes_read;
+                    CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDouble:
+                                               ((float)total_bytes_read/content_length)];
+                    [result setKeepCallbackAsBool:YES];
+                    [self.commandDelegate sendPluginResult:result callbackId:_dl_progress_id];
+                }
+            } else if (num_bytes_read < 0) {
+                [self connectivityError:command.callbackId];
+                return;
             }
-        }
-        
-        if(tot_recvd != content_length) {
-            [self connectivityError:command.callbackId];
-        } else if (_dl_progress_id != nil) {
-            CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDouble:
-                                       1.0];
-            [result setKeepCallbackAsBool:YES];
-            [self.commandDelegate sendPluginResult:result callbackId:_dl_progress_id];
-        }
-        
-        close(request_socket);
-        freeaddrinfo(server_address);
-        
+        } while( num_bytes_read > 0);
+ 
         CDVPluginResult* pluginResult = nil;
         NSData *fw_data = [NSData dataWithBytes:firmware_buffer length:content_length];
         free(firmware_buffer);
