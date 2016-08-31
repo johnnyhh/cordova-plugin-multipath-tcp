@@ -33,9 +33,6 @@ import java.net.HttpURLConnection;
 import java.util.List;
 import java.util.Map;
 
-/**
- * This class echoes a string called from JavaScript.
- */
 public class MultipathTCP extends CordovaPlugin {
     String url, method;
     CallbackContext callbackContext;
@@ -59,19 +56,25 @@ public class MultipathTCP extends CordovaPlugin {
     private void request() {
         final Activity activity = this.cordova.getActivity();
         Context context = activity.getApplicationContext();
-        if (context.checkSelfPermission(Manifest.permission.CHANGE_NETWORK_STATE) != PackageManager.PERMISSION_GRANTED) {
+//        if (context.checkSelfPermission(Manifest.permission.CHANGE_NETWORK_STATE) != PackageManager.PERMISSION_GRANTED) {
+//            cordova.requestPermission(this, REQUEST_CODE, CHANGE_NETWORK_STATE);
+//        } else {
             establishConnection(method, url, callbackContext);
-            return;
-            //cordova.getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS));
-            //return;
-        } else {
-            establishConnection(method, url, callbackContext);
-        }
+//        }
     }
 
-    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults){
-        establishConnection(this.method, this.url, this.callbackContext);
-    }
+//    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException
+//    {
+//        for(int r : grantResults) {
+//            if(r == PackageManager.PERMISSION_DENIED) {
+//                this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR,
+//                        "Permission to change network status not granted."));
+//            }
+//            if(requestCode == REQUEST_CODE) {
+//                establishConnection(method, url, callbackContext);
+//            }
+//        }
+//    }
 
     private void establishConnection(final String method, final String url, final CallbackContext callbackContext){
         Context context = cordova.getActivity().getApplicationContext();
@@ -160,5 +163,9 @@ public class MultipathTCP extends CordovaPlugin {
     }
 
     private static final String TAG = "MultipathTCP";
+
+    public static final String CHANGE_NETWORK_STATE = Manifest.permission.CHANGE_NETWORK_STATE;
+
+    public static final int REQUEST_CODE = 0;
 
 }
