@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-multipath-tcp" version="0.1.0">
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-multipath-tcp" version="0.1.0"
+  xmlns:android="http://schemas.android.com/apk/res/android">
     <name>Multipath TCP</name>
     <description>
       Cordova plugin for connecting to an endpoint via cell network when connected to a WIFI network with limited/no connectivity.
@@ -9,6 +10,7 @@
     <js-module src="www/multipathTCP.js" name="multipathTCP">
         <clobbers target="multipathTCP" />
     </js-module>
+
     <platform name="ios">
       <config-file target="config.xml" parent="/*">
             <feature name="MultipathTCP">
@@ -18,4 +20,19 @@
         <header-file src="src/ios/CDVMultipathTCP.h" />
         <source-file src="src/ios/CDVMultipathTCP.m" />
     </platform>
+
+    <platform name="android">
+      <source-file src="src/android/MultipathTCP.java" target-dir="src/com/rosepoint/" />
+
+      <config-file target="res/xml/config.xml" parent="/*">
+        <feature name="MultipathTCP">
+          <param name="android-package" value="com.rosepoint.MultipathTCP"/>
+        </feature>
+      </config-file>
+
+      <config-file target="AndroidManifest.xml" parent="/*">
+        <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+      </config-file>
+    </platform>
+
 </plugin>

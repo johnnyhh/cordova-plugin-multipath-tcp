@@ -20,10 +20,11 @@
     _dl_progress_id = nil;
 }
 
--(void)download:(CDVInvokedUrlCommand*)command
+-(void)request:(CDVInvokedUrlCommand*)command
 {
     [self.commandDelegate runInBackground:^{
-        NSString *download_url = [command.arguments objectAtIndex:0];
+        NSString *method = [command.arguments objectAtIndex:0];
+        NSString *download_url = [command.arguments objectAtIndex:1];
         NSString *hostname, *filename;
         
         NSError *regex_error = NULL;
@@ -50,8 +51,8 @@
         while(addrs) {
             int isUp = (addrs->ifa_flags & IFF_UP);
             int isIPv4 = (addrs->ifa_addr->sa_family == AF_INET);
-            //if (isUp == 1 && isIPv4 == 1 && strncmp("pdp_ip", addrs->ifa_name, 6) == 0) {
-            if (isUp == 1 && isIPv4 == 1 && strncmp("en", addrs->ifa_name, 2) == 0) {
+            if (isUp == 1 && isIPv4 == 1 && strncmp("pdp_ip", addrs->ifa_name, 6) == 0) {
+            //if (isUp == 1 && isIPv4 == 1 && strncmp("en", addrs->ifa_name, 2) == 0) {
                 bind_address = addrs;
                 break;
             }
@@ -107,7 +108,7 @@
         
         //Encode HTTP request
         CFURLRef req_url = CFURLCreateWithString(kCFAllocatorDefault, (__bridge CFStringRef)download_url, NULL);
-        CFHTTPMessageRef http_request = CFHTTPMessageCreateRequest(kCFAllocatorDefault, CFSTR("GET"), req_url, kCFHTTPVersion1_1);
+        CFHTTPMessageRef http_request = CFHTTPMessageCreateRequest(kCFAllocatorDefault, (__bridge CFStringRef)method, req_url, kCFHTTPVersion1_1);
         CFHTTPMessageSetHeaderFieldValue(http_request, CFSTR("Host"), (__bridge CFStringRef)hostname);
         CFHTTPMessageSetHeaderFieldValue(http_request, CFSTR("Accept"), CFSTR("*/*"));
         
@@ -167,17 +168,26 @@
                 return;
             }
         } while( num_bytes_read > 0);
- 
-        CDVPluginResult* pluginResult = nil;
-        NSData *fw_data = [NSData dataWithBytes:firmware_buffer length:content_length];
-        free(firmware_buffer);
         
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArrayBuffer:fw_data];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        if(total_bytes_read < content_length && [method  isEqual: @"GET"]) {
+            [self connectivityError:command.callbackId];
+            return;
+        }
+ 
+        //we need to return a javascript object with
+        NSArray *plugin_response =
+            @[[NSNumber numberWithLong:CFHTTPMessageGetResponseStatusCode(response)],
+              (__bridge NSDictionary*)CFHTTPMessageCopyAllHeaderFields(response),
+              (__bridge NSData*)CFHTTPMessageCopyBody(response)
+              ];
+        
+        CDVPluginResult *plugin_result =
+            [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsMultipart:plugin_response];
+        [self.commandDelegate sendPluginResult:plugin_result callbackId:command.callbackId];
     }];
   }
 
--(void)onDownloadProgress:(CDVInvokedUrlCommand *)command
+-(void)onRequestProgress:(CDVInvokedUrlCommand *)command
 {
     _dl_progress_id = command.callbackId;
 }

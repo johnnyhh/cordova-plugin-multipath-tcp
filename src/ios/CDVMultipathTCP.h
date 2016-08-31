@@ -4,8 +4,8 @@
     NSString * _dl_progress_id;
 }
 
-- (void)download:(CDVInvokedUrlCommand*)command;
+- (void)request:(CDVInvokedUrlCommand*)command;
 
--(void)onDownloadProgress:(CDVInvokedUrlCommand*)command;
+-(void)onRequestProgress:(CDVInvokedUrlCommand*)command;
 
 @end
