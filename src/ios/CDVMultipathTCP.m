@@ -153,10 +153,16 @@
                     return;
                 }
                 if (!headers_parsed && CFHTTPMessageIsHeaderComplete(response)) {
-                    CFStringRef cl_str = CFHTTPMessageCopyHeaderFieldValue(response, CFSTR("Content-Length"));
-                    content_length = CFStringGetIntValue(cl_str);
+                    if(CFHTTPMessageGetResponseStatusCode(response) != 200) {
+                        [self connectivityError:command.callbackId];
+                        return;
+                    } else {
+                        CFStringRef cl_str = CFHTTPMessageCopyHeaderFieldValue(response, CFSTR("Content-Length"));
+                        content_length = CFStringGetIntValue(cl_str);
+                        headers_parsed = TRUE;
+                    }
                 }
-                if (content_length > 0 && total_bytes_read - last_notification_size > 1000000){
+                if (_dl_progress_id != nil && content_length > 0 && (total_bytes_read - last_notification_size > 1000000 || last_notification_size == 0)){
                     last_notification_size = total_bytes_read;
                     CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDouble:
                                                ((float)total_bytes_read/content_length)];
